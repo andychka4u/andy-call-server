@@ -1,5 +1,5 @@
 // andy-call / server.js
-// Simple WebSocket signaling + chat server for ANDY LIVE (WebRTC)
+// WebSocket signaling + chat + host control for ANDY LIVE
 
 const WebSocket = require("ws");
 
@@ -48,7 +48,6 @@ wss.on("connection", (ws) => {
 
         console.log(`[ANDY-CALL] Client ${clientId} joined room ${roomName}`);
 
-        // send back list of existing peers
         const otherIds = Array.from(room.keys()).filter((id) => id !== clientId);
         ws.send(
           JSON.stringify({
@@ -59,7 +58,6 @@ wss.on("connection", (ws) => {
           })
         );
 
-        // notify others
         broadcastToRoom(
           roomName,
           {
@@ -97,7 +95,6 @@ wss.on("connection", (ws) => {
         if (!roomName) return;
         const text = (data.text || "").toString().slice(0, 500);
         const name = (data.name || "Guest").toString().slice(0, 40);
-
         if (!text.trim()) return;
 
         broadcastToRoom(roomName, {
@@ -106,6 +103,27 @@ wss.on("connection", (ws) => {
           name,
           text,
         });
+        break;
+      }
+
+      case "control": {
+        // host control: { type: 'control', targetId, action }
+        // action: 'mute-audio','unmute-audio','mute-video','unmute-video'
+        if (!roomName) return;
+        const room = rooms.get(roomName);
+        if (!room) return;
+        const targetId = data.targetId;
+        const targetSocket = room.get(targetId);
+        if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) return;
+
+        targetSocket.send(
+          JSON.stringify({
+            type: "control",
+            fromId: clientId,
+            targetId,
+            action: data.action,
+          })
+        );
         break;
       }
 
@@ -120,7 +138,6 @@ wss.on("connection", (ws) => {
       const room = rooms.get(roomName);
       room.delete(clientId);
 
-      // notify others
       broadcastToRoom(
         roomName,
         {
@@ -142,9 +159,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-/**
- * Broadcast message to everyone in a room except optional excludeId
- */
 function broadcastToRoom(roomName, msgObj, excludeId = null) {
   const room = rooms.get(roomName);
   if (!room) return;
