@@ -1,5 +1,5 @@
 // andy-call / server.js
-// Simple WebSocket signaling server for ANDY LIVE (WebRTC)
+// Simple WebSocket signaling + chat server for ANDY LIVE (WebRTC)
 
 const WebSocket = require("ws");
 
@@ -48,7 +48,7 @@ wss.on("connection", (ws) => {
 
         console.log(`[ANDY-CALL] Client ${clientId} joined room ${roomName}`);
 
-        // Send back list of existing peers
+        // send back list of existing peers
         const otherIds = Array.from(room.keys()).filter((id) => id !== clientId);
         ws.send(
           JSON.stringify({
@@ -59,11 +59,15 @@ wss.on("connection", (ws) => {
           })
         );
 
-        // Notify others
-        broadcastToRoom(roomName, {
-          type: "peer-joined",
-          id: clientId,
-        }, clientId);
+        // notify others
+        broadcastToRoom(
+          roomName,
+          {
+            type: "peer-joined",
+            id: clientId,
+          },
+          clientId
+        );
 
         break;
       }
@@ -88,6 +92,23 @@ wss.on("connection", (ws) => {
         break;
       }
 
+      case "chat": {
+        // data: { type: 'chat', name, text }
+        if (!roomName) return;
+        const text = (data.text || "").toString().slice(0, 500);
+        const name = (data.name || "Guest").toString().slice(0, 40);
+
+        if (!text.trim()) return;
+
+        broadcastToRoom(roomName, {
+          type: "chat",
+          fromId: clientId,
+          name,
+          text,
+        });
+        break;
+      }
+
       default:
         break;
     }
@@ -99,11 +120,15 @@ wss.on("connection", (ws) => {
       const room = rooms.get(roomName);
       room.delete(clientId);
 
-      // Notify others in the room
-      broadcastToRoom(roomName, {
-        type: "peer-left",
-        id: clientId,
-      }, clientId);
+      // notify others
+      broadcastToRoom(
+        roomName,
+        {
+          type: "peer-left",
+          id: clientId,
+        },
+        clientId
+      );
 
       if (room.size === 0) {
         rooms.delete(roomName);
